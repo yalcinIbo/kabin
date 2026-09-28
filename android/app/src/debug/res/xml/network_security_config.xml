@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Yalnızca debug derlemesi: yerel ağdaki Firebase emülatörlerine düz HTTP ile bağlanabilmek için.
+     Release derlemesi src/main'deki sıkı yapılandırmayı (yalnızca HTTPS) kullanır. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

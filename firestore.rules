@@ -1,0 +1,125 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- yardımcılar ----------
+    function isSignedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isOwner(id) { return isSignedIn() && uid() == id; }
+    function isAdmin() { return isSignedIn() && request.auth.token.get('admin', false) == true; }
+    function data() { return request.resource.data; }
+    function affected() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function onlyKeys(keys) { return affected().hasOnly(keys); }
+    function validStr(v, max) { return v is string && v.size() <= max; }
+    function optInt(field, lo, hi) {
+      return data().get(field, null) == null
+        || (data()[field] is int && data()[field] >= lo && data()[field] <= hi);
+    }
+    function optEnum(field, values) {
+      return data().get(field, null) == null || data()[field] in values;
+    }
+    function validMeasurements() {
+      return optInt('heightCm', 100, 250)
+        && optInt('weightKg', 30, 300)
+        && optEnum('bodyType', ['slim', 'average', 'athletic', 'curvy', 'plus'])
+        && optEnum('gender', ['female', 'male', 'unspecified']);
+    }
+    function validConsent(c) {
+      return c.kvkkAccepted == true && c.aiTransferAccepted == true && c.kvkkVersion is string;
+    }
+
+    // ---------- kullanıcı ----------
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      // Kredi yalnızca sunucu tarafından yazılır (hoş geldin kredisi tetikleyici ile gelir).
+      allow create: if isOwner(userId)
+        && data().credits == 0
+        && !data().keys().hasAny(['isAdmin'])
+        && validConsent(data().consent)
+        && validStr(data().get('displayName', ''), 60)
+        && validMeasurements();
+      allow update: if isOwner(userId)
+        && !affected().hasAny(['credits', 'isAdmin', 'createdAt'])
+        && (!('consent' in affected()) || validConsent(data().consent))
+        && validStr(data().get('displayName', ''), 60)
+        && validMeasurements();
+      allow delete: if false;
+
+      match /photos/{photoId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && data().source == 'upload'
+          && data().status == 'pending'
+          && data().storagePath is string
+          && data().storagePath.matches('^users/' + userId + '/photos/' + photoId + '/.+')
+          && data().get('isDefault', false) == false
+          && !data().keys().hasAny(['qc', 'cost', 'leaseUntil', 'avatarParams', 'refundedAmount']);
+        allow update: if isOwner(userId)
+          && resource.data.status == 'ready'
+          && onlyKeys(['isDefault', 'updatedAt'])
+          && data().isDefault is bool;
+        // İşlenmekte olan avatar silinemez (iade akışı bozulmasın).
+        allow delete: if isOwner(userId) && resource.data.status in ['ready', 'rejected', 'failed', 'pending']
+          && !(resource.data.source == 'generated' && resource.data.status == 'pending');
+      }
+
+      match /garments/{garmentId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && data().status == 'analyzing'
+          && data().storagePath is string
+          && data().storagePath.matches('^users/' + userId + '/garments/' + garmentId + '/.+')
+          && !data().keys().hasAny(['analysis', 'isolatedPath', 'tryonSupported']);
+        // Kullanıcı analiz sonucunu düzeltebilir; deneme isteği kategoriyi sunucuda yeniden doğrular.
+        allow update: if isOwner(userId)
+          && resource.data.status == 'ready'
+          && onlyKeys(['analysis', 'tryonSupported', 'userEdited', 'updatedAt'])
+          && data().analysis.category in ['tops', 'bottoms', 'one-pieces', 'dresses', 'shoes', 'other']
+          && data().analysis.garmentPhotoType in ['flat-lay', 'model', 'mannequin', 'screenshot']
+          && validStr(data().analysis.titleTr, 60)
+          && validStr(data().analysis.get('colorNameTr', ''), 40);
+        allow delete: if isOwner(userId);
+      }
+
+      // İşler yalnızca sunucu tarafından yazılır; tamamlanan/başarısız olanlar silinebilir.
+      match /tryons/{jobId} {
+        allow read: if isOwner(userId);
+        allow delete: if isOwner(userId) && resource.data.status in ['done', 'failed'];
+        allow create, update: if false;
+      }
+      match /models3d/{modelId} {
+        allow read: if isOwner(userId);
+        allow delete: if isOwner(userId) && resource.data.status in ['done', 'failed'];
+        allow create, update: if false;
+      }
+      match /ledger/{entryId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+      match /usage/{day} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+    }
+
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /benchmarks/{runId} {
+      allow read: if isAdmin();
+      allow write: if false;
+      match /pairs/{pairId} {
+        allow read: if isAdmin();
+        allow update: if isAdmin() && onlyKeys(['rating', 'updatedAt']);
+        allow create, delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

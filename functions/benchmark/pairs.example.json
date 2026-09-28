@@ -1,0 +1,16 @@
+[
+  {
+    "id": "ayse-elbise",
+    "photo": "photos/ayse.jpg",
+    "garment": "garments/yazlik-elbise.jpg",
+    "category": "one-pieces",
+    "garmentPhotoType": "flat-lay"
+  },
+  {
+    "id": "mehmet-gomlek",
+    "photo": "photos/mehmet.jpg",
+    "garment": "garments/keten-gomlek.jpg",
+    "category": "tops",
+    "garmentPhotoType": "model"
+  }
+]

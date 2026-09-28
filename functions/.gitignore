@@ -1,0 +1,9 @@
+node_modules/
+lib/
+*.log
+.secret.local
+.env.local
+benchmark/out/
+benchmark/photos/
+benchmark/garments/
+benchmark/samples/

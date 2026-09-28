@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function isAdmin() { return isSignedIn() && request.auth.token.get('admin', false) == true; }
+    function isImage() {
+      return request.resource.contentType.matches('image/.*')
+        && request.resource.size <= 10 * 1024 * 1024;
+    }
+
+    // Kullanıcının yüklediği ham görseller: yalnızca sahibi okur/yazar.
+    match /users/{uid}/photos/{allPaths=**} {
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid) && (request.resource == null || isImage());
+    }
+    match /users/{uid}/garments/{allPaths=**} {
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid) && (request.resource == null || isImage());
+    }
+    match /users/{uid}/tmp/{allPaths=**} {
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid) && (request.resource == null || isImage());
+    }
+
+    // Sunucunun ürettiği çıktılar: sahibi okur, istemci yazamaz.
+    match /users/{uid}/tryons/{allPaths=**} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+    match /users/{uid}/models3d/{allPaths=**} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    match /benchmarks/{allPaths=**} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
